@@ -1,0 +1,448 @@
+一、java NIO 和阻塞I/O的区别
+	阻塞I/O在调用InputStream.read()方法时是阻塞的，它会一直等到数据到来时（或超时）才会返回；
+		同样，在调用ServerSocket.accept()方法时，也会一直阻塞到有客户端连接才会返回，
+		每个客户端连接过来后，服务端都会启动一个线程去处理该客户端的请求。
+	一定会发现阻塞I/O存在一些缺点：
+	1. 当客户端多时，会创建大量的处理线程。且每个线程都要占用栈空间和一些CPU时间
+	2. 阻塞可能带来频繁的上下文切换，且大部分上下文切换可能是无意义的。
+	
+	Java NIO是在jdk1.4 开始使用的，它既可以说成“新I/O”，也可以说成非阻塞式I/O。下面是java NIO的工作原理：
+	1. 由一个专门的线程来处理所有的 IO 事件，并负责分发。
+	2. 事件驱动机制：事件到的时候触发，而不是同步的去监视事件。
+	3. 线程通讯：线程之间通过 wait,notify 等方式通讯。保证每次上下文切换都是有意义的。减少无谓的线程切换。 
+	Java NIO的服务端只需启动一个专门的线程来处理所有的 IO 事件，这种通信模型是怎么实现的呢？
+	呵呵，我们一起来探究它的奥秘吧。java NIO采用了双向通道（channel）进行数据传输，而不是单向的流（stream），
+	在通道上可以注册我们感兴趣的事件。一共有以下四种事件：
+			事件名 					对应值
+	服务端接收客户端连接事件 	SelectionKey.OP_ACCEPT(16)
+	客户端连接服务端事件 		SelectionKey.OP_CONNECT(8)
+	读事件 						SelectionKey.OP_READ(1)
+	写事件 						SelectionKey.OP_WRITE(4)
+	服务端和客户端各自维护一个管理通道的对象，我们称之为selector，该对象能检测一个或多个通道 (channel) 上的事件。
+	我们以服务端为例，如果服务端的selector上注册了读事件，某时刻客户端给服务端发送了一些数据，
+	阻塞I/O这时会调用read()方法阻塞地读取数据，而NIO的服务端会在selector中添加一个读事件。
+	服务端的处理线程会轮询地访问selector，如果访问selector时发现有感兴趣的事件到达，则处理这些事件，
+	如果没有感兴趣的事件到达，则处理线程会一直阻塞直到感兴趣的事件到达为止。
+	
+二、序列化和反序列化分别用于什么场合
+	把对象转换为字节序列的过程称为对象的序列化
+	
+	主要用于存储对象状态为另一种通用格式，比如存储为二进制、xml、json等等，
+		把对象转换成这种格式就叫序列化，而反序列化通常是从这种格式转换回来。
+	使用序列化主要是因为跨平台和对象存储的需求，因为网络上只允许字符串或者二进制格式，
+		而文件需要使用二进制流格式，如果想把一个内存中的对象存储下来就必须使用序列化转换为xml（字符串）、json（字符串）或二进制（流）
+
+三、@Repository注解便属于最先引入的一批，它用于将数据访问层 (DAO 层 ) 的类标识为 Spring Bean。具体只需将该注解标注在 DAO类上即可。
+    @Component 是一个泛化的概念，仅仅表示一个组件 (Bean) ，可以作用在任何层次。
+    @Service 通常作用在业务层，但是目前该功能与 @Component 相同。
+    @Constroller 通常作用在控制层，但是目前该功能与 @Component 相同。
+通过在类上使用 @Repository、@Component、@Service 和 @Constroller 注解，Spring会自动创建相应的 BeanDefinition 对象，
+并注册到 ApplicationContext 中。这些类就成了 Spring受管组件。这三个注解除了作用于不同软件层次的类，
+其使用方式与 @Repository 是完全相同的。
+
+	@Transactional 事务管理注释
+	
+	基本注解讲解：http://blog.csdn.net/xyh820/article/details/7303330/
+
+四、Obj.wait()，与Obj.notify()必须要与synchronized(Obj)一起使用，也就是wait,与notify是针对已经获取了Obj锁进行操作，
+	从语法角度来说就是Obj.wait(),Obj.notify必须在synchronized(Obj){...}语句块内。
+	从功能上来说wait就是说线程在获取对象锁后，主动释放对象锁，同时本线程休眠。直到有其它线程调用对象的notify()唤醒该线程，
+	才能继续获取对象锁，并继续执行。
+	相应的notify()就是对对象锁的唤醒操作。但有一点需要注意的是notify()调用后，并不是马上就释放对象锁的，
+	而是在相应的synchronized(){}语句块执行结束，自动释放锁后，JVM会在wait()对象锁的线程中随机选取一线程，赋予其对象锁，
+	唤醒线程，继续执行。这样就提供了在线程间同步、唤醒的操作。Thread.sleep()与Object.wait()二者都可以暂停当前线程，释放CPU控制权，
+	主要的区别在于Object.wait()在释放CPU同时，释放了对象锁的控制。
+	http://blog.csdn.net/zyplus/article/details/6672775
+
+五、Netty在线Javadoc：http://tool.oschina.net/apidocs/apidoc?api=netty
+	Server会自动处理多客户端请求（http://www.2cto.com/kf/201405/299028.html）
+	import io.netty.bootstrap.ServerBootstrap; 
+	import io.netty.channel.ChannelFuture; 
+	import io.netty.channel.ChannelInitializer; 
+	import io.netty.channel.EventLoopGroup; 
+	import io.netty.channel.nio.NioEventLoopGroup; 
+	import io.netty.channel.socket.SocketChannel; 
+	import io.netty.channel.socket.nio.NioServerSocketChannel; 
+	import java.net.InetSocketAddress; 
+	import NettyDemo.echo.handler.EchoServerHandler; 
+	public class EchoServer { 
+	private static final int port = 8080; 
+	public void start() throws InterruptedException { 
+		ServerBootstrap b = new ServerBootstrap();// 引导辅助程序 
+		EventLoopGroup group = new NioEventLoopGroup();// 通过nio方式来接收连接和处理连接 
+		try { 
+			b.group(group);
+			b.channel(NioServerSocketChannel.class);// 设置nio类型的channel 
+			b.localAddress(new InetSocketAddress(port));// 设置监听端口 
+			b.childHandler(new ChannelInitializer() {//有连接到达时会创建一个channel 
+				protected void initChannel(SocketChannel ch) throws Exception { // pipeline管理channel中的Handler，在channel队列中添加一个handler来处理业务 
+					ch.pipeline().addLast("myHandler", new EchoServerHandler()); 
+				}
+			}); 
+			ChannelFuture f = b.bind().sync();// 配置完成，开始绑定server，通过调用sync同步方法阻塞直到绑定成功 
+			System.out.println(EchoServer.class.getName() + " started and listen on " + f.channel().localAddress()); 
+			f.channel().closeFuture().sync();// 应用程序会一直等待，直到channel关闭 
+		} catch (Exception e) { 
+			e.printStackTrace(); 
+		} finally { 
+			group.shutdownGracefully().sync();//关闭EventLoopGroup，释放掉所有资源包括创建的线程 
+		} 
+	} 
+	public static void main(String[] args) { 
+		try { 
+			new EchoServer().start(); 
+		} catch (InterruptedException e) { 
+			e.printStackTrace(); 
+		} 
+	} 
+} 
+		1. 创建一个ServerBootstrap实例
+		2. 创建一个EventLoopGroup来处理各种事件，如处理链接请求，发送接收数据等。
+		3. 定义本地InetSocketAddress( port)好让Server绑定
+		4. 创建childHandler来处理每一个链接请求 
+		5. 所有准备好之后调用ServerBootstrap.bind()方法绑定Server 
+	业务逻辑ServerHandler：
+		要想处理接收到的数据，我们必须继承ChannelInboundHandlerAdapter接口，
+		重写里面的MessageReceive方法，每当有数据到达，此方法就会被调用（一般是Byte类型数组）
+	关于异常处理：
+		程序中也重写了exceptionCaught方法，这里就是对当异常出现时的处理。
+	Netty Client：
+		一般一个简单的Client会扮演如下角色： 连接到Server向Server写数据等待Server返回数据关闭连接
+	BootsTrapping的过程：
+		和Server端类似，只不过Client端要同时指定连接主机的IP和Port。
+		1. 创建一个ServerBootstrap实例
+		2. 创建一个EventLoopGroup来处理各种事件，如处理链接请求，发送接收数据等。
+		3. 定义一个远程InetSocketAddress好让客户端连接
+		4. 当连接完成之后，Handler会被执行一次 
+		5. 所有准备好之后调用ServerBootstrap.connect()方法连接Server
+	业务逻辑ClientHandler: 
+		同样继承一个SimpleChannelInboundHandler来实现我们的Client，我们需要重写其中的三个方法：
+		channelActive会在连接到服务器后被调用；channelRead会在接收到服务器数据后调用；
+		exceptionCaught捕捉到异常
+	其中需要注意的是channelRead0()方法，此方法接收到的可能是一些数据片段，比如服务器发送了5个
+	数据，Client端不能保证一次全部收到，比如第一次收到3个字节，第二次收到2个字节。我们可能还
+	会关心收到这些片段的顺序是否可发送顺序一致，这要看具体是什么协议，比如基于TCP协议的字节流
+	是能保证顺序的。 
+	还有一点，在Client端我们的业务Handler继承的是SimpleChannelInboundHandler，而在服务器端继
+	承的是ChannelInboundHandlerAdapter，那么这两个有什么区别呢？最主要的区别就是
+	SimpleChannelInboundHandler在接收到数据后会自动release掉数据占用的Bytebuffer资源(自动调
+	用Bytebuffer.release())。而为何服务器端不能用呢，因为我们想让服务器把客户端请求的数据发送
+	回去，而服务器端有可能在channelRead方法返回前还没有写完数据，因此不能让它自动release。
+
+	与公司代码比较相近的Netty	http://www.cnblogs.com/zhuawang/p/3849742.html 
+	比较详细的介绍了netty	http://ifeve.com/netty5-user-guide/
+	
+六、ORM关系对象数据库的体现
+	Entity详解及关系数据库 	http://www.cnblogs.com/guanghuiqq/archive/2012/08/20/2647117.html
+	一对多等关系的补充	http://blog.csdn.net/sivyer123/article/details/21787587
+	
+	在entity包下用@Entity @Table(name = "t_tbox") 来标注一个实体类对应数据库的t_tbox表
+	对于每个属性的get/set方法，只有get方法前需要@Column(name = "vin", nullable = false, insertable = true, updatable = true, length = 17)
+		等注释；
+	在实体类中引入其他的类对象@ManyToOne(cascade = CascadeType.PERSIST)
+						@JoinColumn(name = "oid",referencedColumnName = "Id")
+	主键 @Id
+		@GeneratedValue(strategy = GenerationType.IDENTITY)
+	普通属性就	@Basic
+			@Column(name = "vin", nullable = false, insertable = true, updatable = true, length = 50)
+
+七、Entity获取find()或getReference()的比较
+	如果知道Entity的唯一标识符，可以用find()或getReference()方法获取Entity。
+	当在数据库中没有找到记录时，getReference()和find()是有区别的，find()方法会返回null;
+	而getReference()方法会抛出javax.persistence.EntityNotFoundException例外;
+	另外getReference()方法不保证实体Bean已被初始化。如果传递进getReference()或find()方法的参数不是实体Bean，都会引发IllegalArgumentException。
+
+八、CRUD：	http://blog.csdn.net/sivyer123/article/details/21787587
+	C 增: cascade：级联，只影响cud，不影响r（all全都级联，persist存储时级联，remove删除时级联）;
+		如果没有设置cascade，默认需要save（Group)和save(users)，两个都要存，设置级联之后，只存一个就行了
+		级联依赖于这句：@ManyToOne(cascade=(CascadeType.ALL))//需要依赖于其他的东西时候
+		设置好正反向之后，多个有级联关系的对象就一起被保存了
+	R 查: 默认会这样处理（平时管用的思路也是这样）：
+		1.取“多”的时候，把“一”取出来
+		2.取“一”时，不取“多”的，用到时候再去取（看user信息时候一般看组名，看group时候user信息太多不必看）
+		fetch管读取，cascade管增删改
+		@OneToMany(mappedBy="group",cascade=(CascadeType.ALL),fetch=FetchType.EAGER)
+		@OneToMany默认的是LAZY，@ManyToOne默认是EAGER
+		User u = (User)s.get(User.class,1);//取user时候，把group也取出来，
+	U 更新: 注意：fetch影响两者读取顺序（两边都设成EAGER要多取出一次），反正都要取，具体再试
+		@OneToMany,@ManyToOne都写cascade=(CascadeType.ALL)
+		update时候自动关联更新
+	D 删: 删多：实测只删掉目的项目，不关联其他
+		先load（就是select）一下，确认有之后，再删
+		没有遇到：不能直接s.delete(u)，因为u和group有级联，group和所有users都有级联，一下就够给删掉了的情况
+		不过严谨起见，还是设置一个u.setGroup(null);比较好
+		删一：如果有子项目，报错不让删除
+
+九、BIO与NIO的区别
+	BIO（Blocking IO）阻塞IO 
+	NIO（Non-Blocking IO）非阻塞IO
+	共同点：两者都是同步操作。即必须先进行IO操作后才能进行下一步操作。
+	不同点：BIO多线程对某资源进行IO操作时会出现阻塞，即一个线程进行IO操作完才会通知另外的IO操作线程，必须等待。
+	NIO多线程对某资源进行IO操作时会把资源先操作至内存缓冲区。然后询问是否IO操作就绪，是则进行IO操作，否则进行下一步操作，然后不断的轮询是否IO操作就绪，直到iIO操作就绪后进行相关操作
+
+	同步阻塞IO（JAVA BIO）： 同步并阻塞，服务器实现模式为一个连接一个线程，即客户端有连接请求时服务器端就需要启动一个线程进行处理，如果这个连接不做任何事情会造成不必要的线程开销，当然可以通过线程池机制改善。 
+	同步非阻塞IO(Java NIO) ： 同步非阻塞，服务器实现模式为一个请求一个线程，即客户端发送的连接请求都会注册到多路复用器上，多路复用器轮询到连接有I/O请求时才启动一个线程进行处理。用户进程也需要时不时的询问IO操作是否就绪，这就要求用户进程不停的去询问。 
+	异步阻塞IO（Java NIO）：  此种方式下是指应用发起一个IO操作以后，不等待内核IO操作的完成，等内核完成IO操作以后会通知应用程序，这其实就是同步和异步最关键的区别，同步必须等待或者主动的去询问IO是否完成，那么为什么说是阻塞的呢？因为此时是通过select系统调用来完成的，而select函数本身的实现方式是阻塞的，而采用select函数有个好处就是它可以同时监听多个文件句柄（如果从UNP的角度看，select属于同步操作。因为select之后，进程还需要读写数据），从而提高系统的并发性！  
+	（Java AIO(NIO.2)）异步非阻塞IO:  在此种模式下，用户进程只需要发起一个IO操作然后立即返回，等IO操作真正的完成以后，应用程序会得到IO操作完成的通知，此时用户进程只需要对数据进行处理就好了，不需要进行实际的IO读写操作，因为真正的IO读取或者写入操作已经由内核完成了。
+
+	BIO、NIO、AIO适用场景分析: 
+	BIO方式适用于连接数目比较小且固定的架构，这种方式对服务器资源要求比较高，并发局限于应用中，JDK1.4 以前的唯一选择，但程序直观简单易理解。 
+    NIO方式适用于连接数目多且连接比较短（轻操作）的架构，比如聊天服务器，并发局限于应用中，编程比较复杂，JDK1.4 开始支持。 
+    AIO方式使用于连接数目多且连接比较长（重操作）的架构，比如相册服务器，充分调用OS参与并发操作，编程比较复杂，JDK7开始支持。
+
+十、彻底弄明白之java多线程中的volatile
+	Java 语言提供了一种稍弱的同步机制,即 volatile 变量.用来确保将变量的更新操作通知到其他线程,保证了新值能立即同步到主内存,以及每次使用前立即从主内存刷新. 当把变量声明为volatile类型后,编译器与运行时都会注意到这个变量是共享的.
+	
+	volatile 变量对所有线程是立即可见的,对 volatile 变量所有的写操作都能立即反应到其他线程之中,换句话说:volatile 变量在各个线程中是一致的,所以基于 volatile 变量的运算是线程安全的.  
+	这句话论据貌似没有错,论点确实错的.volatile 并不完全是线程安全的
+	
+	volatile 使用于一个线程写，多个线程读的情形
+	
+	指令重排序：while(!stop) === if(!stop) {while(true){...}}
+	
+	通过使用线程池、task(Runnable/Callable)、原子类(Atomic)和线程安全容器来代替传统的同步锁、wait和notify,以提升并发访问性能、降低多线程编程难度
+	
+十一、通道channel与流stream的区别 
+
+十二、java中instanceof用法
+		java 中的instanceof 运算符是用来在运行时指出对象是否是特定类的一个实例。instanceof通过返回一个布尔值来指出，这个对象是否是这个特定类或者是它的子类的一个实例。
+		 用法：
+		result = object instanceof class
+		参数：
+		Result：布尔类型。
+		Object：必选项。任意对象表达式。
+		Class：必选项。任意已定义的对象类。
+		说明：
+		如果 object 是 class 的一个实例，则 instanceof 运算符返回 true。如果 object 不是指定类的一个实例，或者 object 是 null，则返回 false。
+
+十三、注解(annotation) 
+		@Documented
+		@Target(ElementType.TYPE)	Target注解决定MyAnnotation注解可以加在哪些成分上，如加在类身上，或者属性身上，或者方法身上等成分
+		@Retention(RUNTIME)	Retention注解决定MyAnnotation注解的生命周期
+		详情	http://www.cnblogs.com/xdp-gacl/p/3622275.html
+		
+十四、Java的String中的subString()方法 	http://blog.163.com/cpu_driver/blog/static/117663448201111182341311/
+		方法如下：
+		public String substring(int beginIndex, int endIndex)
+		第一个int为开始的索引，对应String数字中的开始位置，
+		第二个是截止的索引位置，对应String中的结束位置
+		1、 取得的字符串长度为：endIndex - beginIndex;
+		2、 从beginIndex开始取，到endIndex结束，从0开始数，其中不包括endIndex位置的字符
+		如：
+		"hamburger".substring(4, 8) returns "urge"
+		 "smiles".substring(1, 5) returns "mile"
+		取长度大于等于3的字符串a的后三个子字符串，只需a.subString(a.length()-3, a.length());
+
+		手册中的具体说明如下：
+		substring
+		public String substring(int beginIndex, int endIndex)
+		Returns a new string that is a substring of this string. The substring begins at the specified beginIndex and extends to the character at index endIndex - 1. Thus the length of the substring is endIndex-beginIndex. 
+		Examples: 
+
+		 "hamburger".substring(4, 8) returns "urge"
+		 "smiles".substring(1, 5) returns "mile"
+		 
+		Parameters:
+		beginIndex - the beginning index, inclusive.
+		endIndex - the ending index, exclusive. 
+		Returns:
+		the specified substring. 
+		Throws: 
+		IndexOutOfBoundsException - if the beginIndex is negative, or endIndex is larger than the length of this String object, or beginIndex is larger than endIndex.
+		
+十五、JAVA移位运算符( <<、 >>、 >>> ) 	http://jinguo.iteye.com/blog/540150
+	<<运算规则：按二进制形式把所有的数字向左移动对应的位数，高位移出（舍弃），低位的空位补零。
+	>>运算规则：按二进制形式把所有的数字向右移动对应的位数，低位移出（舍弃），高位的空位补符号位，即正数补零，负数补1.	
+	>>>运算规则：按二进制形式把所有的数字向右移动对应的位数，低位移出（舍弃），高位的空位补零。对于正数来说和带符号右移相同，对于负数来说不同。	
+		
+十六、java数据类型位数
+	byte：8位，1字节，最大存储数据量是255，存放的数据范围是-128~127之间。 
+	short：16位，2字节，最大数据存储量是65536，数据范围是-32768~32767之间。 
+	int：32位，4字节，最大数据存储容量是2的32次方减1，数据范围是负的2的31次方到正的2的31次方减1。 
+	long：64位，8字节，最大数据存储容量是2的64次方减1，数据范围为负的2的63次方到正的2的63次方减1。 
+	float：32位，4字节，数据范围在3.4e-45~1.4e38，直接赋值时必须在数字后加上f或F。 
+	double：64位，8字节，数据范围在4.9e-324~1.8e308，赋值时可以加d或D也可以不加。 
+	boolean：只有true和false两个取值。 
+	char：16位，2字节，存储Unicode码，用单引号赋值。 
+
+十七、抽象类和接口	http://blog.csdn.net/lyflower/article/details/4204449
+
+十八、cookie和session详解 	http://blog.csdn.net/fangaoxin/article/details/6952954
+		
+十九、@RequestMapping 用法详解之地址映射	http://www.cnblogs.com/qq78292959/p/3760560.html
+											http://www.cnblogs.com/qq78292959/p/3760651.html
+											http://www.cnblogs.com/qq78292959/p/3760702.html
+	RequestMethod		http://blog.csdn.net/sunhuwh/article/details/10372921
+	spring3.0添加了一个过滤器，可以将这些请求转换为标准的http方法，使得支持GET、POST、PUT与DELETE请求
+	GET模式下，这里使用了@PathVariable绑定输入参数，非常适合Restful风格。因为隐藏了参数与路径的关系，可以提升网站的安全性，静态化页面，降低恶意攻击风险。
+	POST模式下，使用@RequestBody绑定请求对象，Spring会帮你进行协议转换，将Json、Xml协议转换成你需要的对象
+	@ResponseBody可以标注任何对象，由Srping完成对象——协议的转换
+		
+	@ExceptionHandler	当这个Controller中任何一个方法发生异常，一定会被@ExceptionHandler标记的这个方法拦截到。然后，输出日志。封装Map并返回，页面上得到status为false。就这么简单。
+	
+	@Transactional	在service类前加上@Transactional，声明这个service所有方法需要事务管理。每一个业务方法开始时都会打开一个事务。 
+		
+二十、flip()的作用有两个：1. 把limit设置为当前的position值 
+						2. 把position设置为0
+						然后处理的数据就是从position到limit直接的数据，也就是你刚刚读取过来的数据
+	
+	trim():去掉字符串首尾的空格。
+	
+二十一、System.getProperty("line.separator") 等价于“\n"
+	
+二十二、HTTP请求中的GET和POST请求方式的区别：
+	1.根据HTTP规范，GET用于信息获取，而且而且应该是安全的和幂等的；
+					POST则表示可能会改变服务器上的资源的请求
+	2.GET提交，请求的数据会附在URL之后，就是把数据放在请求行(request line)中，以”？“分隔URL和传输数据，多个参数用”&“链接；
+		POST提交会把提交的数据放置在HTTP消息的包体中，数据不会在地址栏中显示出来
+	3.传输数据的大小不同。特定的浏览器和服务器对URL长度有限制，例如IE对URL长度限制是2083字节(2KB+35B)，因此GET携带的参数的长度会受到浏览器的限制；
+		POST由于不是通过URL传值，理论上是不受限制的
+	4.安全性。POST的安全性要比GET安全性高；比如GET提交的数据，用户名和密码将明文出现在URL上。因为1）登录页面有可能被浏览器缓存；2）其他人查看浏览器的历史记录，
+		别人就可以拿到你的账号密码了。除此之外，使用GET提交数据还可能会造成Cross-site request forgery攻击。POST提交的内容由于在消息体中传输，因此不存在上述完全问题
+	
+	HTTP响应消息：状态码：  （1）1XX：指示信息。表示请求已接受，继续处理；
+							（2）2XX：成功。表示请求已被成功接收、理解、接受；
+							（3）3XX：重定向。要完成请求必须进行更进一步的操作；
+							（4）4XX：客户端错误。请求有语法错误或请求无法实现；
+							（5）5XX：服务器端错误。服务器未能处理请求。
+				HTTP-200：OK：客户端请求成功
+				HTTP-400：Bad Request：客户端请求有语法错误，不能被服务器所理解
+				HTTP-401：Unauthorized：请求未经授权，这个转态代码必须和WWW-Authenticate报头域一起使用
+				HTTP-403：Forbidden：服务器收到请求，但是拒绝提供服务
+				HTTP-404：Not Found：请求资源不存在
+				HTTP-500：Internal Server Error：服务器发生不可预期的错误
+				HTTP-503：Server Unavailable：服务器当前不能处理客户端的请求，一段时间后可能过恢复正常
+		
+	HTTP协议的弊端：HTTP协议为半双工协议；HTTP消息冗长而复杂；针对服务器推送的黑客攻击，如长时间轮询。	
+		
+二十三、服务器端拦截器继承ChannelHandlerAdapter的ServerHandler类，重写方法的执行顺序
+	------isSharable----- method is invoked
+	------handlerAdded----- method is invoked
+	------channelRegistered----- method is invoked
+	------channelActive----- method is invoked
+	------read----- method is invoked
+	___channelRead----- method is invoked
+	recived the order is:request to server from client
+	------channelReadComplete----- method is invoked
+	------read----- method is invoked
+	当连接的客户端关闭之后
+	------channelReadComplete----- method is invoked
+	------read----- method is invoked
+	------exceptionCaught----- method is invoked
+	------channelInactive----- method is invoked
+	------handlerRemoved----- method is invoked
+	当新客户端连上时
+	------isSharable----- method is invoked
+	------handlerAdded----- method is invoked
+	------channelRegistered----- method is invoked
+	------channelActive----- method is invoked
+	------read----- method is invoked
+	___channelRead----- method is invoked
+	recived the order is:request to server from client
+	------channelReadComplete----- method is invoked
+	------read----- method is invoked
+
+二十四、Netty编解码器LengthFieldBasedFrameDecoder的四个参数总结；
+	public LengthFieldBasedFrameDecoder(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength,
+		int lengthAdjustment, int initialBytesToStrip)
+	maxFrameLength：一个数据包的最大长度。一般定义适当就行，几乎不会用到。
+	lengthFieldOffset：指出该数据包中定义消息长度字段在该数据包中的开始位置。
+	lengthFieldLength：指出该数据包中定义消息长度字段在该数据包中的长度。结合lengthFieldOffset字段的值就可以知道消息长度的值。
+	lengthAdjustment：指出数据包中消息位置开始算的地方(从长度字段的末尾开始算起则为0，正数则在0往右过去正数位，负数则在0往左过去正数位）
+					但是，之后读取数据长度为消息长度字段值。也就是说，数据包消息开始的地方，然后长度为前面消息长度字段值的一段数据就是消息体。
+	initialBytesToStrip：定义解码后需要忽略掉那些字段。也就定义解码后数据包前面多少字节是不要了的
+					
+二十五、StringBuilder与StringBuffer的区别：(String)
+	三者在执行速度方面的比较：StringBuilder >  StringBuffer  >  String 
+	StringBuffer是线程安全的，方法大部分是用Synchroized修饰，
+	StringBuilder是非线程安全的，没有一个方法是用Synchronized修饰。
+		
+二十六、遍历Map的四种方式
+	1、//第一种：普遍使用，二次取值
+  System.out.println("通过Map.keySet遍历key和value：");
+  for (String key : map.keySet()) {
+   System.out.println("key= "+ key + " and value= " + map.get(key));
+  }
+	2、//第二种
+  System.out.println("通过Map.entrySet使用iterator遍历key和value：");
+  Iterator<Map.Entry<String, String>> it = map.entrySet().iterator();
+  while (it.hasNext()) {
+   Map.Entry<String, String> entry = it.next();
+   System.out.println("key= " + entry.getKey() + " and value= " + entry.getValue());
+  }
+	3、//第三种：推荐，尤其是容量大时
+  System.out.println("通过Map.entrySet遍历key和value");
+  for (Map.Entry<String, String> entry : map.entrySet()) {
+   System.out.println("key= " + entry.getKey() + " and value= " + entry.getValue());
+  }
+	4、//第四种
+  System.out.println("通过Map.values()遍历所有的value，但不能遍历key");
+  for (String v : map.values()) {
+   System.out.println("value= " + v);
+  }
+	
+二十七、smartGit从github里下载新的项目是在smartgit里点击clone，然后输入github的链接
+		
+二十八、XSD的用法：
+	sequence 		要求子元素必须按顺序出现。每个子元素可出现 0 到任意次数
+	attribute 		定义一个属性。
+	simpleType 		定义一个简单类型，规定约束以及关于属性或仅含文本的元素的值的信息。
+	restriction 	定义对 simpleType、simpleContent 或 complexContent 的约束。	
+	enumeration 	定义可接受值的一个列表
+	annotation 		annotation 元素是一个顶层元素，规定 schema 的注释。
+	documentation 	定义 schema 中的文本注释。
+	extension 		扩展已有的 simpleType 或 complexType 元素。
+	choice 			仅允许在 <choice> 声明中包含一个元素出现在包含元素中。
+	
+二十九、ByteBuffer用法 http://www.tuicool.com/articles/qIRB7bV
+	capacity		容量，即可以容纳的最大数据量；在缓冲区创建时被设定并且不能改变
+	limit			表示缓冲区的当前终点，不能对缓冲区超过极限的位置进行读写操作。且极限是可以修改的
+	position		位置，下一个要被读或写的元素的索引，每次读写缓冲区数据时都会改变改值，为下次读写作准备
+	mark			标记，调用mark()来设置mark=position，再调用reset()可以让position恢复到标记的位置
+	
+	rewind() 		把position设为0，mark设为-1
+	flip()			limit = position; position = 0; mark = -1; 翻转，也就是让flip之后的position到limit这块区域变成之前的0到position这块，
+					翻转就是将一个处于存数据状态的缓冲区变为一个处于准备取数据的状态
+	clear()			position =0; limit= capacity; marks= -1; 有点初始化的味道，但是并不影响底层byte数组的内容
+	compact()		把从position到limit中的内容移到0到limit-position的区域内，position和limit的取值也分别变成limit-position、capacity。如果先将positon设置到limit，再compact，那么相当于clear()
+	get()			相对读，从position位置读取一个byte，并将position+1，为下次读写作准备
+	put(byte)		相对写，向position的位置写入一个byte，并将postion+1，为下次读写作准备
+		
+三十、Spring_Boot http://my.oschina.net/u/1027043/blog/406558  http://docs.spring.io/spring-boot/docs/current/reference/htmlsingle/#getting-started-gradle-installation
+http://blog.jobbole.com/71999/
+	注意：1、在src/main/java包下的第一层结构中，是必须放一个含有main方法的主启动的类，而且只能有一个main方法，如果再出现其他的main方法，在使用maven编译打包时，会报编译错误，当然在src/test/java包下，
+			可以出现多个，但建议最好使用Junit进行单元测试. 这个main方法启动，就会启动内嵌的tomcat或jetty容器，然后加载所有需要加载的或扫描的类或资源文件。
+		2、在src/main/resource目录下面，是放置一些配置文件，或模板支持的文件，如JSP，Velocity,Freemaker等，这里面比较常用或重要的一个文件，就是Spring Boot的集中式配置文件application.properties这个文件了，
+			这里面给其他大部分的组件，提供了一个可集中管理和配置的中心，包括安全控制，redis，solr，mangodb的连接信息，以及数据库连接池，容器端口号，jmx，java mail，动态模板等。此外这个目录下默认是可以访
+			问静态资源的，比如我们的css，js，或者第三方的一些引用文件等。
+		
+	常用注解：（1）@RestController和@Controller指定一个类，作为控制器的注解 
+			（2）@RequestMapping方法级别的映射注解，这一个用过Spring MVC的小伙伴相信都很熟悉 
+			（3）@EnableAutoConfiguration和@SpringBootApplication是类级别的注解，根据maven依赖的jar来自动猜测完成正确的spring的对应配置，只要引入了spring-boot-starter-web的依赖，默认会自动配置Spring MVC和tomcat容器 
+			（4）@Configuration类级别的注解，一般这个注解，我们用来标识main方法所在的类 
+			（5）@ComponentScan类级别的注解，自动扫描加载所有的Spring组件包括Bean注入，一般用在main方法所在的类上 
+			（6）@ImportResource类级别注解，当我们必须使用一个xml的配置时，使用@ImportResource和@Configuration来标识这个文件资源的类。 
+			（7）@Autowired注解，一般结合@ComponentScan注解，来自动注入一个Service或Dao级别的Bean 
+			（8）@Component类级别注解，用来标识一个组件，比如我自定了一个filter，则需要此注解标识之后，Spring Boot才会正确识别。
+		
+	中文文档SpringBoot https://qbgbook.gitbooks.io/spring-boot-reference-guide-zh/content/I.%20Spring%20Boot%20Documentation/index.html
+三十一、JPQL http://www.aijava.cn/12725.html
+    // 获得实体管理器
+    EntityManager em = …
+    // 建立JPQL查询
+    String getByFirstName = "SELECT c FROM Contact c WHERE c.firstName = :firstName";
+    // 创建查询实例
+    TypedQuery<Contact> query = em.createQuery(getByFirstName, Contact.class);
+    // 设置查询参数
+    query.setParameter("firstName", "John");
+    // 获取结果
+    List<Contact> contacts = query.getResultList();
+		
+三十二、java在gradle工程访问src/test/resources目录下的资源配置文件  http://blog.csdn.net/earbao/article/details/41549527
+	ZipInputStream inputStream =  new ZipInputStream(MyService.class.getResource("/processes/simpleOrderProcess.bar").openStream());
+		
+三十三、redis学习 http://www.tuicool.com/articles/3aAbMz
+	api文档： http://docs.spring.io/spring-data/redis/docs/1.5.0.RELEASE/reference/html/#requirements
+	五种数据类型： http://blog.csdn.net/gaogaoshan/article/details/41039581  http://www.open-open.com/lib/view/open1385173126448.html
+		
+		
